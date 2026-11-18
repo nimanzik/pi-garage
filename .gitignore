@@ -1,1 +1,4 @@
 **/node_modules/
+
+# Text-editor temporary swap files
+*.swp

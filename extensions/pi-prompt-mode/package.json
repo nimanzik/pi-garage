@@ -9,13 +9,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nimanzik/pi-kit.git",
+    "url": "git+https://github.com/nimanzik/pi-garage.git",
     "directory": "extensions/pi-prompt-mode"
   },
   "bugs": {
-    "url": "https://github.com/nimanzik/pi-kit/issues"
+    "url": "https://github.com/nimanzik/pi-garage/issues"
   },
-  "homepage": "https://github.com/nimanzik/pi-kit/tree/main/extensions/pi-prompt-mode#readme",
+  "homepage": "https://github.com/nimanzik/pi-garage/tree/main/extensions/pi-prompt-mode#readme",
   "publishConfig": {
     "access": "public"
   },

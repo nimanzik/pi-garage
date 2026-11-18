@@ -1,6 +1,6 @@
 {
   "name": "@nimanzik/pi-auto-title",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Automatically name Pi sessions from their first request.",
   "type": "module",
   "license": "MIT",
@@ -10,13 +10,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nimanzik/pi-kit.git",
+    "url": "git+https://github.com/nimanzik/pi-garage.git",
     "directory": "extensions/pi-auto-title"
   },
   "bugs": {
-    "url": "https://github.com/nimanzik/pi-kit/issues"
+    "url": "https://github.com/nimanzik/pi-garage/issues"
   },
-  "homepage": "https://github.com/nimanzik/pi-kit/tree/main/extensions/pi-auto-title#readme",
+  "homepage": "https://github.com/nimanzik/pi-garage/tree/main/extensions/pi-auto-title#readme",
   "publishConfig": {
     "access": "public"
   },

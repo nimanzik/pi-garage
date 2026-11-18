@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Tell the title model to summarise review prompts rather than follow their instructions.
+- Update package links to the renamed `pi-garage` repository.
+
 ## 0.1.0
 
 Initial release as `@nimanzik/pi-auto-title`.

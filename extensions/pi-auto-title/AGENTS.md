@@ -2,7 +2,7 @@
 
 ## Issue tracker
 
-Issues and specs live in GitHub Issues for `nimanzik/pi-kit`.
+Issues and specs live in GitHub Issues for `nimanzik/pi-garage`.
 See `docs/agents/issue-tracker.md`.
 
 ## Triage labels
