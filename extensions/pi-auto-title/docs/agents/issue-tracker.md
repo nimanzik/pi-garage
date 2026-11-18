@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and specs live in GitHub Issues for `nimanzik/pi-kit`.
+Issues and specs live in GitHub Issues for `nimanzik/pi-garage`.
 Use the `gh` CLI from this clone.
 
 ## Operations

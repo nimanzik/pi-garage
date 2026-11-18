@@ -1,6 +1,7 @@
-# pi-kit
+# pi-garage
 
-My packages for the Pi coding agent. Install only the ones you want.
+Nima's personal collection of packages for the [Pi Coding Agent](https://pi.dev/).
+Install only the ones you want.
 
 ## Packages
 
