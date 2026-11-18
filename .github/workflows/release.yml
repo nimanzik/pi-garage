@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Extension to release
+        required: true
+        type: choice
+        options:
+          - pi-auto-title
+          - pi-prompt-mode
+      mode:
+        description: Release step
+        type: choice
+        required: true
+        default: dry-run
+        options:
+          - dry-run
+          - stage
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.package }}-${{ inputs.mode == 'dry-run' && 'dry-run' || 'live' }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  pack:
+    if: github.ref == 'refs/heads/main' && github.repository == 'nimanzik/pi-garage'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+
+      - name: Pack the selected workspace
+        id: pack
+        env:
+          EXTENSION: ${{ inputs.package }}
+        run: |
+          case "$EXTENSION" in
+            pi-auto-title|pi-prompt-mode) ;;
+            *) echo 'Unknown extension' >&2; exit 1 ;;
+          esac
+          workspace="extensions/$EXTENSION"
+          name="@nimanzik/$EXTENSION"
+          version=$(jq -er --arg name "$name" 'select(.name == $name) | .version' "$workspace/package.json")
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          if ! awk -v heading="## $version" '
+            found && /^## / { exit }
+            $0 == heading { found = 1; next }
+            found && /[^[:space:]]/ { nonempty = 1; exit }
+            END { exit !nonempty }
+          ' "$workspace/CHANGELOG.md"; then
+            echo "Missing changelog entry for $name@$version" >&2
+            exit 1
+          fi
+          mkdir "$RUNNER_TEMP/release"
+          npm pack --workspace "$name" --ignore-scripts --pack-destination "$RUNNER_TEMP/release"
+          checksum=$(sha256sum "$RUNNER_TEMP/release/nimanzik-$EXTENSION-$version.tgz")
+          printf 'version=%s\nsha256=%s\n' "$version" "${checksum%% *}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: upload
+        with:
+          name: release-${{ inputs.package }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+
+  stage:
+    if: inputs.mode == 'stage'
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm-release
+    permissions:
+      id-token: write
+    env:
+      EXTENSION: ${{ inputs.package }}
+      VERSION: ${{ needs.pack.outputs.version }}
+      REGISTRY: https://registry.npmjs.org
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 26
+          registry-url: https://registry.npmjs.org
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.pack.outputs.artifact-id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/release/
+
+      - name: Stage the checked tarball for npm approval
+        env:
+          SHA256: ${{ needs.pack.outputs.sha256 }}
+        run: |
+          tarball="$RUNNER_TEMP/release/nimanzik-$EXTENSION-$VERSION.tgz"
+          printf '%s  %s\n' "$SHA256" "$tarball" | sha256sum --check --strict
+          npm stage publish "$tarball" --access public --provenance --ignore-scripts --registry "$REGISTRY"
+          printf 'Review and approve @nimanzik/%s@%s on npm. Source commit: %s.\n' \
+            "$EXTENSION" "$VERSION" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
