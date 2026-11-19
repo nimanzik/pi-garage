@@ -110,10 +110,29 @@ each package. Use `nimanzik` as the owner, `pi-garage` as the repository,
 and `npm-release` as the environment. Leave **Allow npm publish** and
 **Allow npm dist-tag** unchecked. No npm token needs to be saved in GitHub.
 
-Set up each publisher just before its first release. Complete staging and npm
-approval within two days of setup. A dry run does not validate the publisher.
-If the configuration expires, delete it in the package settings and add it
-again.
+npm requires a package to exist before Trusted Publishing can be configured.
+For a new extension, merge the release PR and run the release workflow in
+`dry-run` mode. Download, extract, and inspect the artifact, then use an npm
+account with publish access to stage that exact tarball from a local machine:
+
+```sh
+npm stage publish ./nimanzik-<extension>-<version>.tgz \
+  --access public --ignore-scripts --registry https://registry.npmjs.org
+```
+
+Staging a new package creates a public `0.0.0-stage` placeholder version on npm
+until you approve it. Review and approve the staged package with two-factor
+authentication. Compare the public tarball with the `dry-run` artifact before
+tagging the release. The initial release will not have GitHub Actions
+provenance because it was staged from a local machine, so the provenance check
+in step 5 does not apply. Without provenance, npm cannot cryptographically link
+the package to the workflow's source commit. Confirm that the `dry-run` used
+the intended commit before staging the tarball.
+
+After the package exists on npm, set up its Trusted Publisher just before its
+first GitHub Actions release. Complete staging and npm approval within two
+days of setup. A dry run does not validate the publisher. If the configuration
+expires, delete it in the package settings and add it again.
 
 [staged]: https://www.npmjs.com/settings/nimanzik/staged-packages
 [trusted]: https://docs.npmjs.com/trusted-publishers/
