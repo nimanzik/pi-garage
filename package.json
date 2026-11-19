@@ -1,5 +1,5 @@
 {
-  "name": "pi-kit",
+  "name": "pi-garage",
   "private": true,
   "workspaces": ["extensions/*"],
   "scripts": {

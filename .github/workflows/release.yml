@@ -10,6 +10,7 @@ on:
         options:
           - pi-auto-title
           - pi-prompt-mode
+          - pi-prompt-polish
       mode:
         description: Release step
         type: choice
@@ -56,7 +57,7 @@ jobs:
           EXTENSION: ${{ inputs.package }}
         run: |
           case "$EXTENSION" in
-            pi-auto-title|pi-prompt-mode) ;;
+            pi-auto-title|pi-prompt-mode|pi-prompt-polish) ;;
             *) echo 'Unknown extension' >&2; exit 1 ;;
           esac
           workspace="extensions/$EXTENSION"

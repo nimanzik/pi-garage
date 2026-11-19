@@ -1,0 +1,36 @@
+{
+  "name": "@nimanzik/pi-prompt-polish",
+  "version": "0.1.0",
+  "description": "Rewrite a draft prompt using recent conversation, then review it before sending.",
+  "type": "module",
+  "license": "MIT",
+  "readme": "README.md",
+  "author": { "name": "Nima Nooshiri" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimanzik/pi-garage.git",
+    "directory": "extensions/pi-prompt-polish"
+  },
+  "bugs": {
+    "url": "https://github.com/nimanzik/pi-garage/issues"
+  },
+  "homepage": "https://github.com/nimanzik/pi-garage/tree/main/extensions/pi-prompt-polish#readme",
+  "publishConfig": { "access": "public" },
+  "files": ["polish.ts", "CHANGELOG.md", "README.md", "LICENSE"],
+  "keywords": ["pi-package", "pi-extension"],
+  "pi": {
+    "extensions": ["./polish.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "scripts": {
+    "test": "node --experimental-vm-modules --test polish.test.mjs",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.5.0",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

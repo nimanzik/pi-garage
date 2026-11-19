@@ -22,6 +22,12 @@ Load Prompt Mode without saving it to Pi's settings:
 pi -e ./extensions/pi-prompt-mode
 ```
 
+Load Prompt Polish without saving it to Pi's settings:
+
+```sh
+pi -e ./extensions/pi-prompt-polish
+```
+
 ## Adding an extension
 
 Keep each extension in `extensions/<name>/` with its own package manifest,
@@ -58,7 +64,8 @@ manifest, and license. Tests and internal agent documentation are excluded.
 Extract the tarball and run `pi -e` with the path to its `package` directory.
 For Auto Title, use a configured provider to check that it summarises a review
 prompt and preserves a manual title. For Prompt Mode, check `/mode`, `Alt+O`,
-`Alt+N`, mode editing, and prompt history.
+`Alt+N`, mode editing, and prompt history. For Prompt Polish, check that `/polish`
+uses recent conversation and returns a draft without sending it.
 
 ### Publish from GitHub Actions
 
@@ -88,6 +95,7 @@ and select the extension.
    that the source commit matches the stage run summary. If either check
    fails, stop. If npm is still processing the release, wait rather than
    stage it again.
+
 6. Tag the verified commit as `<extension>-v<version>` if the tag does not
    already exist. Create a GitHub Release from that tag using the changelog.
 
@@ -97,8 +105,8 @@ In the GitHub repository settings, create an `npm-release` environment and
 restrict deployments to the `main` branch.
 
 Add a [Trusted Publisher][trusted] for GitHub Actions separately for
-`@nimanzik/pi-auto-title` and `@nimanzik/pi-prompt-mode`. Use `nimanzik` as the
-owner, `pi-garage` as the repository, `release.yml` as the workflow filename,
+each package. Use `nimanzik` as the owner, `pi-garage` as the repository,
+`release.yml` as the workflow filename,
 and `npm-release` as the environment. Leave **Allow npm publish** and
 **Allow npm dist-tag** unchecked. No npm token needs to be saved in GitHub.
 
@@ -108,5 +116,4 @@ If the configuration expires, delete it in the package settings and add it
 again.
 
 [staged]: https://www.npmjs.com/settings/nimanzik/staged-packages
-
 [trusted]: https://docs.npmjs.com/trusted-publishers/
