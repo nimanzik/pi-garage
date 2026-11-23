@@ -1,6 +1,6 @@
 {
   "name": "@nimanzik/pi-prompt-mode",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Switch Pi model and thinking presets from the prompt editor.",
   "type": "module",
   "license": "MIT",
@@ -19,10 +19,20 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": ["prompt-mode.ts", "CHANGELOG.md", "README.md", "LICENSE"],
-  "keywords": ["pi-package", "pi-extension"],
+  "files": [
+    "prompt-mode.ts",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi-extension"
+  ],
   "pi": {
-    "extensions": ["./prompt-mode.ts"]
+    "extensions": [
+      "./prompt-mode.ts"
+    ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.2 - 2026-11-23
+
 ### Added
 
 - Mouse clicks and wheel scrolling work in the Mode picker, Configure modes, Edit
