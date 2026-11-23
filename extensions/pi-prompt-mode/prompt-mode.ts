@@ -686,7 +686,9 @@ async function handleModeChoiceUI(pi: ExtensionAPI, ctx: ExtensionContext, choic
 }
 
 /** Framed select menu whose navigation wraps between the first and last options. */
-async function selectWithWrap(ctx: ExtensionContext, title: string, options: string[]): Promise<string | undefined> {
+async function selectWithWrap(
+	ctx: ExtensionContext, title: string, options: string[], initial?: string,
+): Promise<string | undefined> {
 	// RPC clients render their own UI, so only the plain select is available there.
 	if (ctx.mode === "rpc") return ctx.ui.select(title, options);
 	return ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
@@ -704,6 +706,8 @@ async function selectWithWrap(ctx: ExtensionContext, title: string, options: str
 		};
 		let visibleRows = 1;
 		let list = createList(visibleRows);
+		// An unlisted initial item (for example a deleted mode) falls back to the first option.
+		list.setSelectedIndex(Math.max(0, options.indexOf(initial ?? "")));
 		let listStartRow = 4;
 		let listHeight = 0;
 		return {
@@ -774,15 +778,18 @@ async function selectWithWrap(ctx: ExtensionContext, title: string, options: str
 async function selectModeUI(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 	if (!ctx.hasUI) return;
 
+	let lastChoice: string | undefined;
+	let lastEditedMode: string | undefined;
 	while (true) {
 		await ensureRuntime(pi, ctx);
 		const names = orderedModeNames(runtime.data.modes);
 		const title = `Mode (current: ${runtime.currentMode})`;
-		const choice = await selectWithWrap(ctx, title, [...names, MODE_UI_CONFIGURE]);
+		const choice = await selectWithWrap(ctx, title, [...names, MODE_UI_CONFIGURE], lastChoice);
 		if (!choice) return;
 
 		if (choice === MODE_UI_CONFIGURE) {
-			await configureModesUI(pi, ctx);
+			lastEditedMode = await configureModesUI(pi, ctx, lastEditedMode);
+			lastChoice = MODE_UI_CONFIGURE;
 			continue;
 		}
 
@@ -791,24 +798,26 @@ async function selectModeUI(pi: ExtensionAPI, ctx: ExtensionContext): Promise<vo
 	}
 }
 
-async function configureModesUI(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
-	if (!ctx.hasUI) return;
+/** Returns the item to start on when Configure modes is opened again. */
+async function configureModesUI(
+	pi: ExtensionAPI, ctx: ExtensionContext, initial?: string,
+): Promise<string | undefined> {
+	if (!ctx.hasUI) return initial;
 
+	let lastChoice = initial;
 	while (true) {
 		await ensureRuntime(pi, ctx);
 		const names = orderedModeNames(runtime.data.modes);
-		const choice = await selectWithWrap(ctx, "Configure modes", [...names, MODE_UI_ADD, MODE_UI_BACK]);
-		if (!choice || choice === MODE_UI_BACK) return;
+		const choice = await selectWithWrap(ctx, "Configure modes", [...names, MODE_UI_ADD, MODE_UI_BACK], lastChoice);
+		if (!choice || choice === MODE_UI_BACK) return lastChoice;
 
 		if (choice === MODE_UI_ADD) {
 			const created = await addModeUI(pi, ctx);
-			if (created) {
-				await editModeUI(pi, ctx, created);
-			}
+			lastChoice = created ? await editModeUI(pi, ctx, created) : MODE_UI_ADD;
 			continue;
 		}
 
-		await editModeUI(pi, ctx, choice);
+		lastChoice = await editModeUI(pi, ctx, choice);
 	}
 }
 
@@ -840,15 +849,15 @@ async function addModeUI(pi: ExtensionAPI, ctx: ExtensionContext): Promise<strin
 	}
 }
 
-async function editModeUI(pi: ExtensionAPI, ctx: ExtensionContext, mode: string): Promise<void> {
-	if (!ctx.hasUI) return;
-
+/** Returns the mode's final name, which may have been renamed or deleted. */
+async function editModeUI(pi: ExtensionAPI, ctx: ExtensionContext, mode: string): Promise<string> {
 	let modeName = mode;
+	if (!ctx.hasUI) return modeName;
 
 	while (true) {
 		await ensureRuntime(pi, ctx);
 		const spec = runtime.data.modes[modeName];
-		if (!spec) return;
+		if (!spec) return modeName;
 
 		const modelLabel = spec.provider && spec.modelId ? `${spec.provider}/${spec.modelId}` : "(no model)";
 		const thinkingLabel = spec.thinkingLevel ?? THINKING_UNSET_LABEL;
@@ -861,7 +870,7 @@ async function editModeUI(pi: ExtensionAPI, ctx: ExtensionContext, mode: string)
 			`Edit mode \"${modeName}\"  model: ${modelLabel}  thinking: ${thinkingLabel}`,
 			actions,
 		);
-		if (!action || action === MODE_UI_BACK) return;
+		if (!action || action === MODE_UI_BACK) return modeName;
 
 		if (action === "Change name") {
 			const renamed = await renameModeUI(pi, ctx, modeName);
@@ -919,7 +928,7 @@ async function editModeUI(pi: ExtensionAPI, ctx: ExtensionContext, mode: string)
 			}
 			requestEditorRender?.();
 			ctx.ui.notify(`Deleted mode \"${modeName}\"`, "info");
-			return;
+			return modeName;
 		}
 	}
 }

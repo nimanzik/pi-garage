@@ -246,12 +246,16 @@ function mountPicker(factory, { terminal = { rows: 24 }, keybindings = getKeybin
   return { component, result: () => result };
 }
 
+// The label of the highlighted option in a rendered picker.
+const selectedLabel = (lines) => lines.find((line) => line.includes("→")).trim().slice(2);
+
 test("mode picker wraps arrow navigation and supports selection and cancellation", async (t) => {
   const app = await setup(t, { version: 1, modes: {
     default: { thinkingLevel: "max" }, fast: { thinkingLevel: "off" },
   } });
   app.ctx.hasUI = true;
   let configureOpened = false;
+  const selections = [];
   let keys = ["\x1b[A", "\r"];
   app.ctx.ui = {
     custom: async (factory) => {
@@ -259,7 +263,7 @@ test("mode picker wraps arrow navigation and supports selection and cancellation
       const lines = component.render(80);
       assert.equal(lines[0], "─".repeat(80));
       assert.equal(lines.at(-1), lines[0]);
-      assert.match(lines[4], /→ default/);
+      selections.push([lines[2].trim(), selectedLabel(lines)]);
       assert.match(lines.at(-3), /↑↓ navigate.*select.*cancel/);
       if (lines[2].trim() === "Configure modes") configureOpened = true;
       for (const key of keys) component.handleInput(key);
@@ -275,6 +279,12 @@ test("mode picker wraps arrow navigation and supports selection and cancellation
   };
   await app.commands.mode("", app.ctx);
   assert.equal(configureOpened, true);
+  // Returning from Configure modes lands on Configure modes again.
+  assert.deepEqual(selections, [
+    ["Mode (current: default)", "default"],
+    ["Configure modes", "default"],
+    ["Mode (current: default)", "Configure modes…"],
+  ]);
   // Down from the last option wraps to default.
   app.pi.setThinkingLevel("off");
   keys = ["\x1b[A", "\x1b[B", "\r"];
@@ -366,14 +376,18 @@ test("mode picker forwards mouse wheel and clicks to its select list", async (t)
 // Drives each wrapping menu with scripted keys; records titles and hands select-only calls back.
 function scriptedUI(keysByTitle) {
   const titles = [];
+  const selections = [];
   return {
     titles,
+    selections,
     ui: {
       notify() {},
       custom: async (factory) => {
         const { component, result } = mountPicker(factory);
-        const title = component.render(80)[2].trim();
+        const lines = component.render(80);
+        const title = lines[2].trim();
         titles.push(title);
+        selections.push([title, selectedLabel(lines)]);
         const keys = keysByTitle[title]?.shift() ?? ["\x1b"];
         for (const key of keys) component.handleInput(key);
         return result();
@@ -389,7 +403,8 @@ test("configure modes menu wraps navigation and supports selection, back, and ca
   await app.events.session_start({ reason: "new" }, app.ctx);
   app.ctx.hasUI = true;
   const { ui, titles } = scriptedUI({
-    "Mode (current: default)": [["\x1b[A", "\r"], ["\x1b[A", "\r"]],
+    // The second visit starts on Configure modes again.
+    "Mode (current: default)": [["\x1b[A", "\r"], ["\r"]],
     // Up from the first option wraps to Back; then down from Back wraps to default, opening its editor.
     // Then Back, and on the next visit Esc (the default) cancels.
     "Configure modes": [["\x1b[A", "\x1b[B", "\r"], ["k", "\r"]],
@@ -443,4 +458,33 @@ test("edit, thinking level, store, and use/store menus wrap navigation", async (
   app.ctx.ui = overlay.ui;
   await app.commands.mode("", app.ctx);
   assert.equal((await app.config()).modes.fast.thinkingLevel, "low");
+});
+
+test("configure modes returns to the last edited, renamed, or added mode, also on re-entry", async (t) => {
+  const app = await setup(t, { version: 1, modes: {
+    default: { thinkingLevel: "max" }, fast: { thinkingLevel: "off" }, review: { thinkingLevel: "high" },
+  } });
+  await app.events.session_start({ reason: "new" }, app.ctx);
+  app.ctx.hasUI = true;
+  const { ui, selections } = scriptedUI({
+    "Mode (current: default)": [["k", "\r"], ["\r"]], // the second visit re-enters Configure modes
+    "Configure modes": [
+      ["j", "\r"], // edit fast
+      ["j", "\r"], // from quick (renamed fast), edit review
+      ["k", "k", "\r"], // from default (review deleted), Add mode…
+      ["\x1b"], // from docs (just added), back to the Mode picker
+      ["j", "\r"], // re-entered on docs, Add mode…, then cancel the name prompt
+    ],
+    'Edit mode "fast"  model: (no model)  thinking: off': [["\r"]], // Change name
+    'Edit mode "quick"  model: (no model)  thinking: off': [["k", "\r"]], // Back
+    'Edit mode "review"  model: (no model)  thinking: high': [["k", "k", "\r"]], // Delete mode
+  });
+  const inputs = ["quick", "docs", undefined];
+  app.ctx.ui = { ...ui, input: async () => inputs.shift(), confirm: async () => true };
+  await app.commands.mode("", app.ctx);
+  assert.deepEqual(
+    selections.filter(([title]) => title === "Configure modes" || title.startsWith("Mode (")).map(([, item]) => item),
+    ["default", "default", "quick", "default", "docs", "Configure modes…", "docs", "Add mode…", "Configure modes…"],
+  );
+  assert.deepEqual(Object.keys((await app.config()).modes), ["default", "quick", "docs"]);
 });
