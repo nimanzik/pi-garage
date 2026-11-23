@@ -10,6 +10,14 @@ npm test
 npm run typecheck
 ```
 
+CI also checks each changelog with `scripts/check-changelog.sh <extension>`
+and lints Markdown with `markdownlint-cli2`. Run them locally with:
+
+```sh
+for dir in extensions/*/; do scripts/check-changelog.sh "$(basename "$dir")"; done
+npx markdownlint-cli2 "**/*.md" "#node_modules"
+```
+
 Load Auto Title without saving it to Pi's settings:
 
 ```sh
@@ -48,9 +56,9 @@ grouped under `### Added`, `### Changed`, `### Deprecated`, `### Removed`,
 
 In the release PR, bump only the extension being released. Move its
 `## Unreleased` entries into a dated version section, such as
-`## 0.1.2 - 2026-11-23`, and leave an empty `## Unreleased` above it. The
-release workflow requires that dated heading with entries under it. Update the
-root lockfile and run the checks:
+`## 0.1.2 - 2026-11-23`, and leave an empty `## Unreleased` above it.
+`scripts/check-changelog.sh` requires that dated heading with entries under it,
+in CI and in the release workflow. Update the root lockfile and run the checks:
 
 ```sh
 npm install --package-lock-only --ignore-scripts
@@ -103,6 +111,12 @@ and select the extension.
    that the source commit matches the stage run summary. If either check
    fails, stop. If npm is still processing the release, wait rather than
    stage it again.
+
+   If `stage` fails with `E401` ("your authentication token seems to be
+   invalid"), npm rejected the workflow's Trusted Publisher login, not a
+   token. Check the package's Trusted Publisher (see below): it may be
+   missing, have a mismatched field, or have expired. Fix it, then use
+   **Re-run failed jobs** on the same run, which reuses the checked tarball.
 
 6. Tag the verified commit as `<extension>-v<version>` if the tag does not
    already exist. Create a GitHub Release from that tag using the changelog.
