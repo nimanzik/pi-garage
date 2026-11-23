@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createContext, SourceTextModule, SyntheticModule } from "node:vm";
+import { getKeybindings } from "@earendil-works/pi-tui";
 
 const source = stripTypeScriptTypes(await readFile(new URL("./prompt-mode.ts", import.meta.url), "utf8"));
 
@@ -234,6 +235,17 @@ test("configuration stat failures propagate instead of selecting another configu
   await assert.rejects(app.events.session_start({ reason: "new" }, app.ctx), (error) => error === failure);
 });
 
+// Builds a picker component from a ctx.ui.custom factory with a fake terminal and plain theme.
+function mountPicker(factory, { terminal = { rows: 24 }, keybindings = getKeybindings() } = {}) {
+  let result;
+  const component = factory(
+    { terminal, requestRender() {} },
+    { fg: (_color, text) => text, bold: (text) => text },
+    keybindings, (value) => { result = value; },
+  );
+  return { component, result: () => result };
+}
+
 test("mode picker wraps arrow navigation and supports selection and cancellation", async (t) => {
   const app = await setup(t, { version: 1, modes: {
     default: { thinkingLevel: "max" }, fast: { thinkingLevel: "off" },
@@ -243,12 +255,7 @@ test("mode picker wraps arrow navigation and supports selection and cancellation
   let keys = ["\x1b[A", "\r"];
   app.ctx.ui = {
     custom: async (factory) => {
-      let result;
-      const component = factory(
-        { terminal: { rows: 24 }, requestRender() {} },
-        { fg: (_color, text) => text, bold: (text) => text },
-        (await import("@earendil-works/pi-tui")).getKeybindings(), (value) => { result = value; },
-      );
+      const { component, result } = mountPicker(factory);
       const lines = component.render(80);
       assert.equal(lines[0], "─".repeat(80));
       assert.equal(lines.at(-1), lines[0]);
@@ -256,7 +263,7 @@ test("mode picker wraps arrow navigation and supports selection and cancellation
       assert.match(lines.at(-3), /↑↓ navigate.*select.*cancel/);
       if (lines[2].trim() === "Configure modes") configureOpened = true;
       for (const key of keys) component.handleInput(key);
-      return result;
+      return result();
     },
   };
   // Up from the first option wraps to Configure modes; cancel on returning.
@@ -283,15 +290,13 @@ test("mode picker fits short terminals and preserves selection while resizing", 
   app.ctx.ui = {
     custom: async (factory) => {
       const terminal = { rows: 12 };
-      const keybindings = (await import("@earendil-works/pi-tui")).getKeybindings();
-      const component = factory(
-        { terminal, requestRender() {} },
-        { fg: (_color, text) => text, bold: (text) => text },
-        { matches: (data, action) =>
+      const keybindings = getKeybindings();
+      const { component } = mountPicker(factory, {
+        terminal,
+        keybindings: { matches: (data, action) =>
           (data === "h" && action === "tui.select.up") ||
           (data === "l" && action === "tui.select.down") || keybindings.matches(data, action) },
-        () => {},
-      );
+      });
       const check = (selected, itemCount) => {
         const lines = component.render(80);
         assert.ok(lines.length <= terminal.rows);
@@ -337,12 +342,7 @@ test("mode picker forwards mouse wheel and clicks to its select list", async (t)
   app.ctx.hasUI = true;
   app.ctx.ui = {
     custom: async (factory) => {
-      let result;
-      const component = factory(
-        { terminal: { rows: 24 }, requestRender() {} },
-        { fg: (_color, text) => text, bold: (text) => text },
-        (await import("@earendil-works/pi-tui")).getKeybindings(), (value) => { result = value; },
-      );
+      const { component, result } = mountPicker(factory);
       const lines = component.render(80);
       const event = {
         type: "wheel", button: "none", x: 2, y: 4, screenX: 2, screenY: 4,
@@ -356,7 +356,7 @@ test("mode picker forwards mouse wheel and clicks to its select list", async (t)
       assert.equal(component.handleMouse({
         ...event, type: "click", button: "left", y: 5, wheelDelta: undefined,
       })?.handled, true);
-      return result;
+      return result();
     },
   };
   await app.commands.mode("", app.ctx);
@@ -364,25 +364,19 @@ test("mode picker forwards mouse wheel and clicks to its select list", async (t)
 });
 
 // Drives each wrapping menu with scripted keys; records titles and hands select-only calls back.
-async function scriptedUI(keysByTitle) {
+function scriptedUI(keysByTitle) {
   const titles = [];
-  const keybindings = (await import("@earendil-works/pi-tui")).getKeybindings();
   return {
     titles,
     ui: {
       notify() {},
       custom: async (factory) => {
-        let result;
-        const component = factory(
-          { terminal: { rows: 24 }, requestRender() {} },
-          { fg: (_color, text) => text, bold: (text) => text },
-          keybindings, (value) => { result = value; },
-        );
+        const { component, result } = mountPicker(factory);
         const title = component.render(80)[2].trim();
         titles.push(title);
         const keys = keysByTitle[title]?.shift() ?? ["\x1b"];
         for (const key of keys) component.handleInput(key);
-        return result;
+        return result();
       },
     },
   };
@@ -394,7 +388,7 @@ test("configure modes menu wraps navigation and supports selection, back, and ca
   } });
   await app.events.session_start({ reason: "new" }, app.ctx);
   app.ctx.hasUI = true;
-  const { ui, titles } = await scriptedUI({
+  const { ui, titles } = scriptedUI({
     "Mode (current: default)": [["\x1b[A", "\r"], ["\x1b[A", "\r"]],
     // Up from the first option wraps to Back; then down from Back wraps to default, opening its editor.
     // Then Back, and on the next visit Esc (the default) cancels.
@@ -419,7 +413,7 @@ test("edit, thinking level, store, and use/store menus wrap navigation", async (
   await app.events.session_start({ reason: "new" }, app.ctx);
   app.ctx.hasUI = true;
   const edit = 'Edit mode "fast"  model: (no model)  thinking: off';
-  const { ui, titles } = await scriptedUI({
+  const { ui, titles } = scriptedUI({
     "Mode (current: default)": [["j", "j", "\r"]],
     // Up from default wraps to Back; down from Back wraps to default, then fast.
     "Configure modes": [["k", "j", "j", "\r"]],
@@ -434,7 +428,7 @@ test("edit, thinking level, store, and use/store menus wrap navigation", async (
   assert.deepEqual((await app.config()).modes.fast, {});
 
   // /mode store: up from default wraps to fast.
-  const store = await scriptedUI({ "Store current selection into mode": [["k", "\r"]] });
+  const store = scriptedUI({ "Store current selection into mode": [["k", "\r"]] });
   app.ctx.ui = store.ui;
   await app.commands.mode("store", app.ctx);
   assert.equal((await app.config()).modes.fast.thinkingLevel, "max");
@@ -442,7 +436,7 @@ test("edit, thinking level, store, and use/store menus wrap navigation", async (
   // From the custom overlay, choosing a mode asks use/store; up from "use" wraps to "store".
   app.pi.setThinkingLevel("low");
   await app.events.thinking_level_select({}, app.ctx);
-  const overlay = await scriptedUI({
+  const overlay = scriptedUI({
     "Mode (current: custom)": [["j", "\r"]],
     'Mode "fast"': [["k", "\r"]],
   });
