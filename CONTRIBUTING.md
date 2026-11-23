@@ -40,10 +40,17 @@ The root package is private and is not published.
 
 ## Releases (for maintainers)
 
-Packages have independent versions. Feature and fix PRs add changelog entries
-under a `## Unreleased` heading. In the release PR, bump only the extension
-being released and rename its `## Unreleased` heading to the new version, such
-as `## 0.1.2`. Update the root lockfile and run the checks:
+Packages have independent versions. Changelogs follow
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) without comparison
+links. Feature and fix PRs add user-facing entries under `## Unreleased`,
+grouped under `### Added`, `### Changed`, `### Deprecated`, `### Removed`,
+`### Fixed`, or `### Security`.
+
+In the release PR, bump only the extension being released. Move its
+`## Unreleased` entries into a dated version section, such as
+`## 0.1.2 - 2026-11-23`, and leave an empty `## Unreleased` above it. The
+release workflow requires that dated heading with entries under it. Update the
+root lockfile and run the checks:
 
 ```sh
 npm install --package-lock-only --ignore-scripts
