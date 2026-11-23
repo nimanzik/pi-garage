@@ -40,9 +40,10 @@ The root package is private and is not published.
 
 ## Releases (for maintainers)
 
-Packages have independent versions. In the release PR, bump only the extension
-being released and add a changelog entry under a heading such as `## 0.1.2`.
-Update the root lockfile and run the checks:
+Packages have independent versions. Feature and fix PRs add changelog entries
+under a `## Unreleased` heading. In the release PR, bump only the extension
+being released and rename its `## Unreleased` heading to the new version, such
+as `## 0.1.2`. Update the root lockfile and run the checks:
 
 ```sh
 npm install --package-lock-only --ignore-scripts
