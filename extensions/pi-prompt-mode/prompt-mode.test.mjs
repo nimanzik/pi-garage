@@ -254,13 +254,9 @@ test("mode picker wraps arrow navigation and supports selection and cancellation
       assert.equal(lines.at(-1), lines[0]);
       assert.match(lines[4], /→ default/);
       assert.match(lines.at(-3), /↑↓ navigate.*select.*cancel/);
+      if (lines[2].trim() === "Configure modes") configureOpened = true;
       for (const key of keys) component.handleInput(key);
       return result;
-    },
-    select: async (title) => {
-      assert.equal(title, "Configure modes");
-      configureOpened = true;
-      return undefined;
     },
   };
   // Up from the first option wraps to Configure modes; cancel on returning.
@@ -320,9 +316,135 @@ test("mode picker fits short terminals and preserves selection while resizing", 
       check("mode5", 1);
       component.handleInput("k");
       check("mode4", 1);
+      terminal.rows = 9;
+      const compactLines = component.render(80);
+      assert.ok(compactLines.length <= terminal.rows);
+      assert.equal(compactLines[1].trim(), "Mode (current: default)");
+      assert.match(compactLines.at(-2), /↑↓ navigate.*select.*cancel/);
+      assert.ok(compactLines.some((line) => line.includes("→ mode4")));
       component.handleInput("\x1b");
       return undefined;
     },
   };
   await app.commands.mode("", app.ctx);
+});
+
+test("mode picker forwards mouse wheel and clicks to its select list", async (t) => {
+  const app = await setup(t, { version: 1, modes: {
+    default: { thinkingLevel: "max" }, fast: { thinkingLevel: "off" },
+  } });
+  await app.events.session_start({ reason: "new" }, app.ctx);
+  app.ctx.hasUI = true;
+  app.ctx.ui = {
+    custom: async (factory) => {
+      let result;
+      const component = factory(
+        { terminal: { rows: 24 }, requestRender() {} },
+        { fg: (_color, text) => text, bold: (text) => text },
+        (await import("@earendil-works/pi-tui")).getKeybindings(), (value) => { result = value; },
+      );
+      const lines = component.render(80);
+      const event = {
+        type: "wheel", button: "none", x: 2, y: 4, screenX: 2, screenY: 4,
+        width: 80, height: lines.length, shift: false, alt: false, ctrl: false, wheelDelta: 1,
+      };
+      assert.equal(component.handleMouse(event)?.handled, true);
+      assert.ok(component.render(80).some((line) => line.includes("→ fast")));
+      assert.equal(component.handleMouse({
+        ...event, type: "press", button: "left", y: 5, wheelDelta: undefined,
+      })?.handled, true);
+      assert.equal(component.handleMouse({
+        ...event, type: "click", button: "left", y: 5, wheelDelta: undefined,
+      })?.handled, true);
+      return result;
+    },
+  };
+  await app.commands.mode("", app.ctx);
+  assert.equal((await app.config()).currentMode, "fast");
+});
+
+// Drives each wrapping menu with scripted keys; records titles and hands select-only calls back.
+async function scriptedUI(keysByTitle) {
+  const titles = [];
+  const keybindings = (await import("@earendil-works/pi-tui")).getKeybindings();
+  return {
+    titles,
+    ui: {
+      notify() {},
+      custom: async (factory) => {
+        let result;
+        const component = factory(
+          { terminal: { rows: 24 }, requestRender() {} },
+          { fg: (_color, text) => text, bold: (text) => text },
+          keybindings, (value) => { result = value; },
+        );
+        const title = component.render(80)[2].trim();
+        titles.push(title);
+        const keys = keysByTitle[title]?.shift() ?? ["\x1b"];
+        for (const key of keys) component.handleInput(key);
+        return result;
+      },
+    },
+  };
+}
+
+test("configure modes menu wraps navigation and supports selection, back, and cancellation", async (t) => {
+  const app = await setup(t, { version: 1, modes: {
+    default: { thinkingLevel: "max" }, fast: { thinkingLevel: "off" },
+  } });
+  await app.events.session_start({ reason: "new" }, app.ctx);
+  app.ctx.hasUI = true;
+  const { ui, titles } = await scriptedUI({
+    "Mode (current: default)": [["\x1b[A", "\r"]],
+    // Up from the first option wraps to Back; then down from Back wraps to default, opening its editor.
+    "Configure modes": [["\x1b[A", "\x1b[B", "\r"], ["k", "\r"]],
+    // Edit menu: up from "Change name" wraps to Back.
+    'Edit mode "default"  model: (no model)  thinking: max': [["k", "\r"]],
+  });
+  app.ctx.ui = ui;
+  await app.commands.mode("", app.ctx);
+  assert.deepEqual(titles, [
+    "Mode (current: default)", "Configure modes",
+    'Edit mode "default"  model: (no model)  thinking: max',
+    "Configure modes", "Mode (current: default)",
+  ]);
+});
+
+test("edit, thinking level, store, and use/store menus wrap navigation", async (t) => {
+  const app = await setup(t, { version: 1, modes: {
+    default: { thinkingLevel: "max" }, fast: { thinkingLevel: "off" },
+  } });
+  await app.events.session_start({ reason: "new" }, app.ctx);
+  app.ctx.hasUI = true;
+  const edit = 'Edit mode "fast"  model: (no model)  thinking: off';
+  const { ui, titles } = await scriptedUI({
+    "Mode (current: default)": [["j", "j", "\r"]],
+    // Up from default wraps to Back; down from Back wraps to default, then fast.
+    "Configure modes": [["k", "j", "j", "\r"]],
+    // Up from "Change name" wraps to Back, then Delete mode, then Change thinking level.
+    [edit]: [["k", "k", "k", "\r"], ["k", "\r"]],
+    // Up from "off" (first) wraps to "(don't change)", which clears the level.
+    "Thinking level": [["\x1b[A", "\r"]],
+  });
+  app.ctx.ui = ui;
+  await app.commands.mode("", app.ctx);
+  assert.ok(titles.includes("Thinking level"));
+  assert.deepEqual((await app.config()).modes.fast, {});
+
+  // /mode store: up from default wraps to fast.
+  const store = await scriptedUI({ "Store current selection into mode": [["k", "\r"]] });
+  app.ctx.ui = store.ui;
+  await app.commands.mode("store", app.ctx);
+  assert.equal((await app.config()).modes.fast.thinkingLevel, "max");
+
+  // From the custom overlay, choosing a mode asks use/store; up from "use" wraps to "store".
+  app.pi.setThinkingLevel("low");
+  await app.events.thinking_level_select({}, app.ctx);
+  const overlay = await scriptedUI({
+    "Mode (current: custom)": [["j", "\r"]],
+    'Mode "fast"': [["k", "\r"]],
+  });
+  app.ctx.ui = overlay.ui;
+  await app.commands.mode("", app.ctx);
+  assert.equal((await app.config()).modes.fast.thinkingLevel, "low");
 });

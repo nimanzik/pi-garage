@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CustomEditor, getAgentDir, keyHint, rawKeyHint } from "@earendil-works/pi-coding-agent";
-import { fuzzyFilter, Input, SelectList, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { fuzzyFilter, Input, SelectList, truncateToWidth, type TuiMouseEvent, visibleWidth } from "@earendil-works/pi-tui";
 import path from "node:path";
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
@@ -666,7 +666,7 @@ async function handleModeChoiceUI(pi: ExtensionAPI, ctx: ExtensionContext, choic
 	// Special behavior: when we're in "custom" and select another mode,
 	// offer to either *use* it (switch) or *store* the current custom selection into it.
 	if (runtime.currentMode === CUSTOM_MODE_NAME && choice !== CUSTOM_MODE_NAME) {
-		const action = await ctx.ui.select(`Mode \"${choice}\"`, ["use", "store"]);
+		const action = await selectWithWrap(ctx, `Mode \"${choice}\"`, ["use", "store"]);
 		if (!action) return;
 
 		if (action === "use") {
@@ -685,6 +685,91 @@ async function handleModeChoiceUI(pi: ExtensionAPI, ctx: ExtensionContext, choic
 	await applyMode(pi, ctx, choice);
 }
 
+/** Framed select menu whose navigation wraps between the first and last options. */
+async function selectWithWrap(ctx: ExtensionContext, title: string, options: string[]): Promise<string | undefined> {
+	// RPC clients render their own UI, so only the plain select is available there.
+	if (ctx.mode === "rpc") return ctx.ui.select(title, options);
+	return ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
+		const createList = (visibleRows: number) => {
+			const list = new SelectList(options.map((label) => ({ value: label, label })), visibleRows, {
+				selectedPrefix: (text) => theme.fg("accent", text),
+				selectedText: (text) => theme.fg("accent", text),
+				description: (text) => theme.fg("muted", text),
+				scrollInfo: (text) => theme.fg("dim", text),
+				noMatch: (text) => theme.fg("warning", text),
+			});
+			list.onSelect = (item) => done(item.value);
+			list.onCancel = () => done(undefined);
+			return list;
+		};
+		let visibleRows = 1;
+		let list = createList(visibleRows);
+		let listStartRow = 4;
+		let listHeight = 0;
+		return {
+			capturesViewportInput: list.capturesViewportInput,
+			render: (width) => {
+				const compact = tui.terminal.rows < 10;
+				const availableRows = tui.terminal.rows - (compact ? 4 : 8);
+				const nextVisibleRows = Math.max(1, Math.min(10,
+					availableRows - (options.length > availableRows ? 1 : 0)));
+				if (nextVisibleRows !== visibleRows) {
+					const selectedIndex = options.indexOf(list.getSelectedItem()!.value);
+					visibleRows = nextVisibleRows;
+					list = createList(visibleRows);
+					list.setSelectedIndex(selectedIndex);
+				}
+				const border = theme.fg("border", "─".repeat(Math.max(1, width)));
+				const help = rawKeyHint("↑↓", "navigate") + "  " +
+					keyHint("tui.select.confirm", "select") + "  " + keyHint("tui.select.cancel", "cancel");
+				const listLines = list.render(Math.max(1, width - 2)).map((line) => " " + line);
+				listStartRow = compact ? 2 : 4;
+				listHeight = listLines.length;
+				return compact
+					? [
+						border,
+						truncateToWidth(" " + theme.fg("accent", theme.bold(title)), width),
+						...listLines,
+						truncateToWidth(" " + help, width), border,
+					]
+					: [
+						border, "",
+						truncateToWidth(" " + theme.fg("accent", theme.bold(title)), width), "",
+						...listLines, "",
+						truncateToWidth(" " + help, width), "", border,
+					];
+			},
+			invalidate: () => list.invalidate(),
+			handleMouse(event: TuiMouseEvent) {
+				if (
+					event.x < 1 || event.x >= event.width - 1 ||
+					event.y < listStartRow || event.y >= listStartRow + listHeight
+				) {
+					return undefined;
+				}
+				return list.handleMouse({
+					...event,
+					x: event.x - 1,
+					y: event.y - listStartRow,
+					width: Math.max(1, event.width - 2),
+					height: listHeight,
+				});
+			},
+			handleInput(data) {
+				const index = options.indexOf(list.getSelectedItem()!.value);
+				if (keybindings.matches(data, "tui.select.up") || data === "k") {
+					list.setSelectedIndex((index - 1 + options.length) % options.length);
+				} else if (keybindings.matches(data, "tui.select.down") || data === "j") {
+					list.setSelectedIndex((index + 1) % options.length);
+				} else {
+					list.handleInput(data);
+				}
+				tui.requestRender();
+			},
+		};
+	});
+}
+
 async function selectModeUI(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 	if (!ctx.hasUI) return;
 
@@ -692,60 +777,7 @@ async function selectModeUI(pi: ExtensionAPI, ctx: ExtensionContext): Promise<vo
 		await ensureRuntime(pi, ctx);
 		const names = orderedModeNames(runtime.data.modes);
 		const title = `Mode (current: ${runtime.currentMode})`;
-		const options = [...names, MODE_UI_CONFIGURE];
-		const choice = ctx.mode === "rpc"
-			? await ctx.ui.select(title, options)
-			: await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
-				const createList = (visibleRows: number) => {
-					const list = new SelectList(options.map((label) => ({ value: label, label })), visibleRows, {
-						selectedPrefix: (text) => theme.fg("accent", text),
-						selectedText: (text) => theme.fg("accent", text),
-						description: (text) => theme.fg("muted", text),
-						scrollInfo: (text) => theme.fg("dim", text),
-						noMatch: (text) => theme.fg("warning", text),
-					});
-					list.onSelect = (item) => done(item.value);
-					list.onCancel = () => done(undefined);
-					return list;
-				};
-				let visibleRows = 1;
-				let list = createList(visibleRows);
-				return {
-					render: (width) => {
-						// The frame takes eight rows; a scrolling list needs one more for its indicator.
-						const availableRows = tui.terminal.rows - 8;
-						const nextVisibleRows = Math.max(1, Math.min(10,
-							availableRows - (options.length > availableRows ? 1 : 0)));
-						if (nextVisibleRows !== visibleRows) {
-							const selectedIndex = options.indexOf(list.getSelectedItem()!.value);
-							visibleRows = nextVisibleRows;
-							list = createList(visibleRows);
-							list.setSelectedIndex(selectedIndex);
-						}
-						const border = theme.fg("border", "─".repeat(Math.max(1, width)));
-						const help = rawKeyHint("↑↓", "navigate") + "  " +
-							keyHint("tui.select.confirm", "select") + "  " + keyHint("tui.select.cancel", "cancel");
-						return [
-							border, "",
-							truncateToWidth(" " + theme.fg("accent", theme.bold(title)), width), "",
-							...list.render(Math.max(1, width - 2)).map((line) => " " + line), "",
-							truncateToWidth(" " + help, width), "", border,
-						];
-					},
-					invalidate: () => list.invalidate(),
-					handleInput(data) {
-						const index = options.indexOf(list.getSelectedItem()!.value);
-						if (keybindings.matches(data, "tui.select.up") || data === "k") {
-							list.setSelectedIndex((index - 1 + options.length) % options.length);
-						} else if (keybindings.matches(data, "tui.select.down") || data === "j") {
-							list.setSelectedIndex((index + 1) % options.length);
-						} else {
-							list.handleInput(data);
-						}
-						tui.requestRender();
-					},
-				};
-			});
+		const choice = await selectWithWrap(ctx, title, [...names, MODE_UI_CONFIGURE]);
 		if (!choice) return;
 
 		if (choice === MODE_UI_CONFIGURE) {
@@ -764,7 +796,7 @@ async function configureModesUI(pi: ExtensionAPI, ctx: ExtensionContext): Promis
 	while (true) {
 		await ensureRuntime(pi, ctx);
 		const names = orderedModeNames(runtime.data.modes);
-		const choice = await ctx.ui.select("Configure modes", [...names, MODE_UI_ADD, MODE_UI_BACK]);
+		const choice = await selectWithWrap(ctx, "Configure modes", [...names, MODE_UI_ADD, MODE_UI_BACK]);
 		if (!choice || choice === MODE_UI_BACK) return;
 
 		if (choice === MODE_UI_ADD) {
@@ -824,7 +856,7 @@ async function editModeUI(pi: ExtensionAPI, ctx: ExtensionContext, mode: string)
 		if (!isDefaultModeName(modeName)) actions.push("Delete mode");
 		actions.push(MODE_UI_BACK);
 
-		const action = await ctx.ui.select(
+		const action = await selectWithWrap(ctx,
 			`Edit mode \"${modeName}\"  model: ${modelLabel}  thinking: ${thinkingLabel}`,
 			actions,
 		);
@@ -1021,7 +1053,7 @@ async function pickThinkingLevelForModeUI(
 	// Prefer the current selection by ordering it first.
 	const ordered = [defaultValue, ...options.filter((x) => x !== defaultValue)];
 
-	const choice = await ctx.ui.select("Thinking level", ordered);
+	const choice = await selectWithWrap(ctx, "Thinking level", ordered);
 	if (!choice) return undefined;
 	if (choice === THINKING_UNSET_LABEL) return null;
 	if (ALL_THINKING_LEVELS.includes(choice as ThinkingLevel)) return choice as ThinkingLevel;
@@ -1375,7 +1407,7 @@ export default function (pi: ExtensionAPI) {
 				if (!target) {
 					if (!ctx.hasUI) return;
 					const names = orderedModeNames(runtime.data.modes);
-					target = await ctx.ui.select("Store current selection into mode", names);
+					target = await selectWithWrap(ctx, "Store current selection into mode", names);
 					if (!target) return;
 				}
 
