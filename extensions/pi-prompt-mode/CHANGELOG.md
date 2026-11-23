@@ -7,9 +7,9 @@ now use the same picker as Mode picker. Navigation wraps between the first and l
 options. Mouse clicks and wheel scrolling work in these menus. Compact framing
 keeps the borders and keyboard hints visible in terminals under ten rows.
 
-Configure modes returns to the mode you just edited, including after a rename
-or after adding a mode, and Mode picker returns to Configure modes when you
-leave it.
+Configure modes returns to the mode you last edited, including after a rename,
+after adding a mode, and when you open it again from Mode picker. Mode picker
+returns to Configure modes when you leave it. Both reset when `/mode` closes.
 
 ## 0.1.1
 

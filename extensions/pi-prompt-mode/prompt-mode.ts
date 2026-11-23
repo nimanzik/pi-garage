@@ -706,7 +706,8 @@ async function selectWithWrap(
 		};
 		let visibleRows = 1;
 		let list = createList(visibleRows);
-		list.setSelectedIndex(Math.max(0, options.indexOf(initial!)));
+		// An unlisted initial item (for example a deleted mode) falls back to the first option.
+		list.setSelectedIndex(Math.max(0, options.indexOf(initial ?? "")));
 		let listStartRow = 4;
 		let listHeight = 0;
 		return {
@@ -777,17 +778,18 @@ async function selectWithWrap(
 async function selectModeUI(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 	if (!ctx.hasUI) return;
 
-	let last: string | undefined;
+	let lastChoice: string | undefined;
+	let lastEditedMode: string | undefined;
 	while (true) {
 		await ensureRuntime(pi, ctx);
 		const names = orderedModeNames(runtime.data.modes);
 		const title = `Mode (current: ${runtime.currentMode})`;
-		const choice = await selectWithWrap(ctx, title, [...names, MODE_UI_CONFIGURE], last);
+		const choice = await selectWithWrap(ctx, title, [...names, MODE_UI_CONFIGURE], lastChoice);
 		if (!choice) return;
 
 		if (choice === MODE_UI_CONFIGURE) {
-			await configureModesUI(pi, ctx);
-			last = MODE_UI_CONFIGURE;
+			lastEditedMode = await configureModesUI(pi, ctx, lastEditedMode);
+			lastChoice = MODE_UI_CONFIGURE;
 			continue;
 		}
 
@@ -796,24 +798,26 @@ async function selectModeUI(pi: ExtensionAPI, ctx: ExtensionContext): Promise<vo
 	}
 }
 
-async function configureModesUI(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
-	if (!ctx.hasUI) return;
+/** Returns the item to start on when Configure modes is opened again. */
+async function configureModesUI(
+	pi: ExtensionAPI, ctx: ExtensionContext, initial?: string,
+): Promise<string | undefined> {
+	if (!ctx.hasUI) return initial;
 
-	// A deleted mode is no longer listed, so the menu falls back to the first item.
-	let last: string | undefined;
+	let lastChoice = initial;
 	while (true) {
 		await ensureRuntime(pi, ctx);
 		const names = orderedModeNames(runtime.data.modes);
-		const choice = await selectWithWrap(ctx, "Configure modes", [...names, MODE_UI_ADD, MODE_UI_BACK], last);
-		if (!choice || choice === MODE_UI_BACK) return;
+		const choice = await selectWithWrap(ctx, "Configure modes", [...names, MODE_UI_ADD, MODE_UI_BACK], lastChoice);
+		if (!choice || choice === MODE_UI_BACK) return lastChoice;
 
 		if (choice === MODE_UI_ADD) {
 			const created = await addModeUI(pi, ctx);
-			last = created ? await editModeUI(pi, ctx, created) : MODE_UI_ADD;
+			lastChoice = created ? await editModeUI(pi, ctx, created) : MODE_UI_ADD;
 			continue;
 		}
 
-		last = await editModeUI(pi, ctx, choice);
+		lastChoice = await editModeUI(pi, ctx, choice);
 	}
 }
 
