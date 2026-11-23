@@ -63,17 +63,7 @@ jobs:
           workspace="extensions/$EXTENSION"
           name="@nimanzik/$EXTENSION"
           version=$(jq -er --arg name "$name" 'select(.name == $name) | .version' "$workspace/package.json")
-          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          # Require a non-empty "## <version> - YYYY-MM-DD" section.
-          if ! awk -v heading="## $version - " '
-            found && /^## / { exit }
-            index($0, heading) == 1 && substr($0, length(heading) + 1) ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/ { found = 1; next }
-            found && /[^[:space:]]/ { nonempty = 1; exit }
-            END { exit !nonempty }
-          ' "$workspace/CHANGELOG.md"; then
-            echo "Missing changelog entry for $name@$version" >&2
-            exit 1
-          fi
+          scripts/check-changelog.sh "$EXTENSION"
           mkdir "$RUNNER_TEMP/release"
           npm pack --workspace "$name" --ignore-scripts --pack-destination "$RUNNER_TEMP/release"
           checksum=$(sha256sum "$RUNNER_TEMP/release/nimanzik-$EXTENSION-$version.tgz")
