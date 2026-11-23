@@ -395,8 +395,9 @@ test("configure modes menu wraps navigation and supports selection, back, and ca
   await app.events.session_start({ reason: "new" }, app.ctx);
   app.ctx.hasUI = true;
   const { ui, titles } = await scriptedUI({
-    "Mode (current: default)": [["\x1b[A", "\r"]],
+    "Mode (current: default)": [["\x1b[A", "\r"], ["\x1b[A", "\r"]],
     // Up from the first option wraps to Back; then down from Back wraps to default, opening its editor.
+    // Then Back, and on the next visit Esc (the default) cancels.
     "Configure modes": [["\x1b[A", "\x1b[B", "\r"], ["k", "\r"]],
     // Edit menu: up from "Change name" wraps to Back.
     'Edit mode "default"  model: (no model)  thinking: max': [["k", "\r"]],
@@ -406,6 +407,7 @@ test("configure modes menu wraps navigation and supports selection, back, and ca
   assert.deepEqual(titles, [
     "Mode (current: default)", "Configure modes",
     'Edit mode "default"  model: (no model)  thinking: max',
+    "Configure modes", "Mode (current: default)",
     "Configure modes", "Mode (current: default)",
   ]);
 });

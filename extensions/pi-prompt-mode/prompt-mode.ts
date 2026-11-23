@@ -709,6 +709,7 @@ async function selectWithWrap(ctx: ExtensionContext, title: string, options: str
 		return {
 			capturesViewportInput: list.capturesViewportInput,
 			render: (width) => {
+				// The full frame takes eight rows around the list, the compact frame four.
 				const compact = tui.terminal.rows < 10;
 				const availableRows = tui.terminal.rows - (compact ? 4 : 8);
 				const nextVisibleRows = Math.max(1, Math.min(10,
